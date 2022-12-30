@@ -11,9 +11,7 @@
 // limitations under the License.
 
 //! This module defines
-//! 1) a list of constants for every keyword that
-//! can appear in [Word::keyword]:
-//!    pub const KEYWORD = "KEYWORD"
+//! 1) a list of constants for every keyword
 //! 2) an `ALL_KEYWORDS` array with every keyword in it
 //!     This is not a list of *reserved* keywords: some of these can be
 //!     parsed as identifiers if the parser decides so. This means that
@@ -26,6 +24,9 @@
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "visitor")]
+use sqlparser_derive::Visit;
 
 /// Defines a string constant for a single keyword: `kw_def!(SELECT);`
 /// expands to `pub const SELECT = "SELECT";`
@@ -46,6 +47,7 @@ macro_rules! define_keywords {
     ),*) => {
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
         #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+        #[cfg_attr(feature = "visitor", derive(Visit))]
         #[allow(non_camel_case_types)]
         pub enum Keyword {
             NoKeyword,
@@ -71,11 +73,13 @@ define_keywords!(
     ACTION,
     ADD,
     ADMIN,
+    AGAINST,
     ALL,
     ALLOCATE,
     ALTER,
     ANALYZE,
     AND,
+    ANTI,
     ANY,
     APPLY,
     ARCHIVE,
@@ -105,6 +109,7 @@ define_keywords!(
     BLOB,
     BOOLEAN,
     BOTH,
+    BTREE,
     BY,
     BYPASSRLS,
     BYTEA,
@@ -141,8 +146,10 @@ define_keywords!(
     COMMENT,
     COMMIT,
     COMMITTED,
+    COMPRESSION,
     COMPUTE,
     CONDITION,
+    CONFLICT,
     CONNECT,
     CONNECTION,
     CONSTRAINT,
@@ -199,6 +206,7 @@ define_keywords!(
     DISCONNECT,
     DISTINCT,
     DISTRIBUTE,
+    DO,
     DOUBLE,
     DOW,
     DOY,
@@ -222,10 +230,12 @@ define_keywords!(
     EVENT,
     EVERY,
     EXCEPT,
+    EXCLUDE,
     EXEC,
     EXECUTE,
     EXISTS,
     EXP,
+    EXPANSION,
     EXPLAIN,
     EXTENDED,
     EXTERNAL,
@@ -254,6 +264,7 @@ define_keywords!(
     FREEZE,
     FROM,
     FULL,
+    FULLTEXT,
     FUNCTION,
     FUNCTIONS,
     FUSION,
@@ -265,6 +276,7 @@ define_keywords!(
     GROUP,
     GROUPING,
     GROUPS,
+    HASH,
     HAVING,
     HEADER,
     HIVEVAR,
@@ -274,7 +286,9 @@ define_keywords!(
     IF,
     IGNORE,
     ILIKE,
+    IMMUTABLE,
     IN,
+    INCREMENT,
     INDEX,
     INDICATOR,
     INHERIT,
@@ -319,6 +333,7 @@ define_keywords!(
     LOCALTIME,
     LOCALTIMESTAMP,
     LOCATION,
+    LOCKED,
     LOGIN,
     LOWER,
     MANAGEDLOCATION,
@@ -326,6 +341,7 @@ define_keywords!(
     MATCHED,
     MATERIALIZED,
     MAX,
+    MAXVALUE,
     MEDIUMINT,
     MEMBER,
     MERGE,
@@ -339,13 +355,17 @@ define_keywords!(
     MILLISECONDS,
     MIN,
     MINUTE,
+    MINVALUE,
     MOD,
+    MODE,
     MODIFIES,
     MODULE,
     MONTH,
     MSCK,
     MULTISET,
     MUTATION,
+    NANOSECOND,
+    NANOSECONDS,
     NATIONAL,
     NATURAL,
     NCHAR,
@@ -364,6 +384,8 @@ define_keywords!(
     NOSCAN,
     NOSUPERUSER,
     NOT,
+    NOTHING,
+    NOWAIT,
     NTH_VALUE,
     NTILE,
     NULL,
@@ -383,6 +405,7 @@ define_keywords!(
     OPEN,
     OPERATOR,
     OPTION,
+    OPTIONS,
     OR,
     ORC,
     ORDER,
@@ -394,6 +417,7 @@ define_keywords!(
     OVERLAPS,
     OVERLAY,
     OVERWRITE,
+    OWNED,
     PARAMETER,
     PARQUET,
     PARTITION,
@@ -456,6 +480,7 @@ define_keywords!(
     RESTRICT,
     RESULT,
     RETURN,
+    RETURNING,
     RETURNS,
     REVOKE,
     RIGHT,
@@ -474,6 +499,7 @@ define_keywords!(
     SEARCH,
     SECOND,
     SELECT,
+    SEMI,
     SENSITIVE,
     SEQUENCE,
     SEQUENCEFILE,
@@ -487,10 +513,12 @@ define_keywords!(
     SHARE,
     SHOW,
     SIMILAR,
+    SKIP,
     SMALLINT,
     SNAPSHOT,
     SOME,
     SORT,
+    SPATIAL,
     SPECIFIC,
     SPECIFICTYPE,
     SQL,
@@ -498,6 +526,7 @@ define_keywords!(
     SQLSTATE,
     SQLWARNING,
     SQRT,
+    STABLE,
     START,
     STATIC,
     STATISTICS,
@@ -554,6 +583,7 @@ define_keywords!(
     TYPE,
     UESCAPE,
     UNBOUNDED,
+    UNCACHE,
     UNCOMMITTED,
     UNION,
     UNIQUE,
@@ -583,6 +613,7 @@ define_keywords!(
     VERSIONING,
     VIEW,
     VIRTUAL,
+    VOLATILE,
     WEEK,
     WHEN,
     WHENEVER,

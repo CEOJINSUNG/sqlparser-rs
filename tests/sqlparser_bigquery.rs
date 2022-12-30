@@ -16,7 +16,7 @@ mod test_utils;
 use test_utils::*;
 
 use sqlparser::ast::*;
-use sqlparser::dialect::BigQueryDialect;
+use sqlparser::dialect::{BigQueryDialect, GenericDialect};
 
 #[test]
 fn parse_literal_string() {
@@ -95,6 +95,34 @@ fn parse_table_identifiers() {
 }
 
 #[test]
+fn parse_join_constraint_unnest_alias() {
+    assert_eq!(
+        only(
+            bigquery()
+                .verified_only_select("SELECT * FROM t1 JOIN UNNEST(t1.a) AS f ON c1 = c2")
+                .from
+        )
+        .joins,
+        vec![Join {
+            relation: TableFactor::UNNEST {
+                alias: table_alias("f"),
+                array_expr: Box::new(Expr::CompoundIdentifier(vec![
+                    Ident::new("t1"),
+                    Ident::new("a")
+                ])),
+                with_offset: false,
+                with_offset_alias: None
+            },
+            join_operator: JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
+                left: Box::new(Expr::Identifier("c1".into())),
+                op: BinaryOperator::Eq,
+                right: Box::new(Expr::Identifier("c2".into())),
+            })),
+        }]
+    );
+}
+
+#[test]
 fn parse_trailing_comma() {
     for (sql, canonical) in [
         ("SELECT a,", "SELECT a"),
@@ -115,8 +143,191 @@ fn parse_cast_type() {
     bigquery().verified_only_select(sql);
 }
 
+#[test]
+fn parse_like() {
+    fn chk(negated: bool) {
+        let sql = &format!(
+            "SELECT * FROM customers WHERE name {}LIKE '%a'",
+            if negated { "NOT " } else { "" }
+        );
+        let select = bigquery().verified_only_select(sql);
+        assert_eq!(
+            Expr::Like {
+                expr: Box::new(Expr::Identifier(Ident::new("name"))),
+                negated,
+                pattern: Box::new(Expr::Value(Value::SingleQuotedString("%a".to_string()))),
+                escape_char: None,
+            },
+            select.selection.unwrap()
+        );
+
+        // Test with escape char
+        let sql = &format!(
+            "SELECT * FROM customers WHERE name {}LIKE '%a' ESCAPE '\\'",
+            if negated { "NOT " } else { "" }
+        );
+        let select = bigquery().verified_only_select(sql);
+        assert_eq!(
+            Expr::Like {
+                expr: Box::new(Expr::Identifier(Ident::new("name"))),
+                negated,
+                pattern: Box::new(Expr::Value(Value::SingleQuotedString("%a".to_string()))),
+                escape_char: Some('\\'),
+            },
+            select.selection.unwrap()
+        );
+
+        // This statement tests that LIKE and NOT LIKE have the same precedence.
+        // This was previously mishandled (#81).
+        let sql = &format!(
+            "SELECT * FROM customers WHERE name {}LIKE '%a' IS NULL",
+            if negated { "NOT " } else { "" }
+        );
+        let select = bigquery().verified_only_select(sql);
+        assert_eq!(
+            Expr::IsNull(Box::new(Expr::Like {
+                expr: Box::new(Expr::Identifier(Ident::new("name"))),
+                negated,
+                pattern: Box::new(Expr::Value(Value::SingleQuotedString("%a".to_string()))),
+                escape_char: None,
+            })),
+            select.selection.unwrap()
+        );
+    }
+    chk(false);
+    chk(true);
+}
+
+#[test]
+fn parse_similar_to() {
+    fn chk(negated: bool) {
+        let sql = &format!(
+            "SELECT * FROM customers WHERE name {}SIMILAR TO '%a'",
+            if negated { "NOT " } else { "" }
+        );
+        let select = bigquery().verified_only_select(sql);
+        assert_eq!(
+            Expr::SimilarTo {
+                expr: Box::new(Expr::Identifier(Ident::new("name"))),
+                negated,
+                pattern: Box::new(Expr::Value(Value::SingleQuotedString("%a".to_string()))),
+                escape_char: None,
+            },
+            select.selection.unwrap()
+        );
+
+        // Test with escape char
+        let sql = &format!(
+            "SELECT * FROM customers WHERE name {}SIMILAR TO '%a' ESCAPE '\\'",
+            if negated { "NOT " } else { "" }
+        );
+        let select = bigquery().verified_only_select(sql);
+        assert_eq!(
+            Expr::SimilarTo {
+                expr: Box::new(Expr::Identifier(Ident::new("name"))),
+                negated,
+                pattern: Box::new(Expr::Value(Value::SingleQuotedString("%a".to_string()))),
+                escape_char: Some('\\'),
+            },
+            select.selection.unwrap()
+        );
+
+        // This statement tests that SIMILAR TO and NOT SIMILAR TO have the same precedence.
+        let sql = &format!(
+            "SELECT * FROM customers WHERE name {}SIMILAR TO '%a' ESCAPE '\\' IS NULL",
+            if negated { "NOT " } else { "" }
+        );
+        let select = bigquery().verified_only_select(sql);
+        assert_eq!(
+            Expr::IsNull(Box::new(Expr::SimilarTo {
+                expr: Box::new(Expr::Identifier(Ident::new("name"))),
+                negated,
+                pattern: Box::new(Expr::Value(Value::SingleQuotedString("%a".to_string()))),
+                escape_char: Some('\\'),
+            })),
+            select.selection.unwrap()
+        );
+    }
+    chk(false);
+    chk(true);
+}
+
+#[test]
+fn parse_array_agg_func() {
+    for sql in [
+        "SELECT ARRAY_AGG(x ORDER BY x) AS a FROM T",
+        "SELECT ARRAY_AGG(x ORDER BY x LIMIT 2) FROM tbl",
+        "SELECT ARRAY_AGG(DISTINCT x ORDER BY x LIMIT 2) FROM tbl",
+    ] {
+        bigquery().verified_stmt(sql);
+    }
+}
+
+#[test]
+fn test_select_wildcard_with_except() {
+    match bigquery_and_generic().verified_stmt("SELECT * EXCEPT (col_a) FROM data") {
+        Statement::Query(query) => match *query.body {
+            SetExpr::Select(select) => match &select.projection[0] {
+                SelectItem::Wildcard(WildcardAdditionalOptions {
+                    opt_except: Some(except),
+                    ..
+                }) => {
+                    assert_eq!(
+                        *except,
+                        ExceptSelectItem {
+                            fist_elemnt: Ident::new("col_a"),
+                            additional_elements: vec![]
+                        }
+                    )
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        _ => unreachable!(),
+    };
+
+    match bigquery_and_generic()
+        .verified_stmt("SELECT * EXCEPT (department_id, employee_id) FROM employee_table")
+    {
+        Statement::Query(query) => match *query.body {
+            SetExpr::Select(select) => match &select.projection[0] {
+                SelectItem::Wildcard(WildcardAdditionalOptions {
+                    opt_except: Some(except),
+                    ..
+                }) => {
+                    assert_eq!(
+                        *except,
+                        ExceptSelectItem {
+                            fist_elemnt: Ident::new("department_id"),
+                            additional_elements: vec![Ident::new("employee_id")]
+                        }
+                    )
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        _ => unreachable!(),
+    };
+
+    assert_eq!(
+        bigquery_and_generic()
+            .parse_sql_statements("SELECT * EXCEPT () FROM employee_table")
+            .unwrap_err()
+            .to_string(),
+        "sql parser error: Expected identifier, found: )"
+    );
+}
+
 fn bigquery() -> TestedDialects {
     TestedDialects {
         dialects: vec![Box::new(BigQueryDialect {})],
+    }
+}
+
+fn bigquery_and_generic() -> TestedDialects {
+    TestedDialects {
+        dialects: vec![Box::new(BigQueryDialect {}), Box::new(GenericDialect {})],
     }
 }

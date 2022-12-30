@@ -8,6 +8,120 @@ Given that the parser produces a typed AST, any changes to the AST will technica
 ## [Unreleased]
 Check https://github.com/sqlparser-rs/sqlparser-rs/commits/main for undocumented changes.
 
+## [0.29.0] 2022-12-29
+
+### Highlights
+* Partial source location tracking: see #710
+* Recursion limit to prevent stack overflows: #764
+* AST visitor: #765
+
+### Added
+feat: dollar-quoted strings support (#772) - Thanks @vasilev-alex
+* Add derive based AST visitor (#765) - Thanks @tustvold
+* Support `ALTER INDEX {INDEX_NAME} RENAME TO {NEW_INDEX_NAME}` (#767) - Thanks @devgony
+* Support `CREATE TABLE ON UPDATE <expr>` Function (#685) - Thanks @CEOJINSUNG
+* Support `CREATE FUNCTION` definition with `$$` (#755)- Thanks @zidaye
+* Add location tracking in the tokenizer and parser (#710)  - Thanks @ankrgyl
+* Add configurable recursion limit to parser, to protect against stackoverflows (#764)  - Thanks @alamb
+* Support parsing scientific notation (such as `10e5`) (#768) - Thanks @Jefffrey
+* Support `DROP FUNCTION` syntax (#752) - Thanks @zidaye
+* Support json operators `@>` `<@`, `@?` and `@@` - Thanks @audunska
+* Support the type key (#750)- Thanks @yuval-illumex
+
+### Changed
+* Improve docs and add examples for Visitor (#778) - Thanks @alamb
+* Add a backlink from sqlparse_derive to sqlparser and publishing instructions (#779) - Thanks @alamb
+* Document new features, update authors (#776) - Thanks @alamb
+* Improve Readme (#774) - Thanks @alamb
+* Standardize comments on parsing optional keywords (#773) - Thanks @alamb
+* Enable grouping sets parsing for `GenericDialect` (#771) - Thanks @Jefffrey
+* Generalize conflict target (#762) - Thanks @audunska
+* Generalize locking clause (#759) - Thanks @audunska
+* Add negative test for except clause on wildcards (#746)- Thanks @alamb
+* Add `NANOSECOND` keyword (#749)- Thanks @waitingkuo
+
+### Fixed
+* ParserError if nested explain (#781) - Thanks @Jefffrey
+* Fix cargo docs / warnings and add CI check (#777) - Thanks @alamb
+* unnest join constraint with alias parsing for BigQuery dialect (#732)- Thanks @Ziinc
+
+## [0.28.0] 2022-12-05
+
+### Added
+* Support for `EXCEPT` clause on wildcards (#745) - Thanks @AugustoFKL
+* Support `CREATE FUNCTION` Postgres options (#722) - Thanks @wangrunji0408
+* Support `CREATE TABLE x AS TABLE y` (#704) - Thanks @sarahyurick
+* Support MySQL `ROWS` syntax for `VALUES` (#737) - Thanks @aljazerzen
+* Support `WHERE` condition for `UPDATE ON CONFLICT` (#735) - Thanks @zidaye
+* Support `CLUSTER BY` when creating Materialized View (#736) - Thanks @yuval-illumex
+* Support nested comments (#726) - Thanks @yang-han
+* Support `USING` method when creating indexes. (#731) - Thanks @step-baby and @yangjiaxin01
+* Support `SEMI`/`ANTI` `JOIN` syntax (#723) - Thanks @mingmwang
+* Support `EXCLUDE` support for snowflake and generic dialect (#721) - Thanks @AugustoFKL
+* Support `MATCH AGAINST` (#708) - Thanks @AugustoFKL
+* Support `IF NOT EXISTS` in `ALTER TABLE ADD COLUMN` (#707) - Thanks @AugustoFKL
+* Support `SET TIME ZONE <value>` (#727)  - Thanks @waitingkuo
+* Support `UPDATE ... FROM ( subquery )` (#694) - Thanks  @unvalley
+
+### Changed
+* Add `Parser::index()` method to get current parsing index (#728) - Thanks @neverchanje
+* Add `COMPRESSION` as keyword (#720)- Thanks @AugustoFKL
+* Derive `PartialOrd`, `Ord`, and `Copy` whenever possible (#717) - Thanks @AugustoFKL
+* Fixed `INTERVAL` parsing logic and precedence (#705) - Thanks @sarahyurick
+* Support updating multiple column names whose names are the same as(#725)  - Thanks @step-baby
+
+### Fixed
+* Clean up some redundant code in parser (#741) - Thanks @alamb
+* Fix logical conflict - Thanks @alamb
+* Cleanup to avoid is_ok() (#740) - Thanks @alamb
+* Cleanup to avoid using unreachable! when parsing semi/anti join (#738) - Thanks @alamb
+* Add an example to docs to clarify semantic analysis (#739) - Thanks @alamb
+* Add information about parting semantic logic to README.md (#724) - Thanks @AugustoFKL
+* Logical conflicts - Thanks @alamb
+* Tiny typo in docs (#709) - Thanks @pmcgee69
+
+
+## [0.27.0] 2022-11-11
+
+### Added
+* Support `ON CONFLICT` and `RETURNING` in `UPDATE` statement (#666) - Thanks @main and @gamife
+* Support `FULLTEXT` option on create table for MySQL and Generic dialects (#702) - Thanks @AugustoFKL
+* Support `ARRAY_AGG` for Bigquery and Snowflake (#662) - Thanks @SuperBo
+* Support DISTINCT for SetOperator (#689) - Thanks @unvalley
+* Support the ARRAY type of Snowflake (#699) - Thanks @yuval-illumex
+* Support create sequence with options INCREMENT, MINVALUE, MAXVALUE, START etc. (#681) - Thanks @sam-mmm
+* Support `:` operator for semi-structured data in Snowflake(#693) - Thanks @yuval-illumex
+* Support ALTER TABLE DROP PRIMARY KEY (#682) - Thanks @ding-young
+* Support `NUMERIC` and `DEC` ANSI data types (#695) - Thanks @AugustoFKL
+* Support modifiers for Custom Datatype (#680) - Thanks @sunng87
+
+### Changed
+* Add precision for TIME, DATETIME, and TIMESTAMP data types (#701) - Thanks @AugustoFKL
+* add Date keyword (#691) - Thanks @sarahyurick
+* Update simple_logger requirement from 2.1 to 4.0 - Thanks @dependabot
+
+### Fixed
+* Fix broken DataFusion link (#703) - Thanks @jmg-duarte
+* Add MySql, BigQuery to all dialects tests, fixed bugs (#697) - Thanks @omer-shtivi
+
+
+## [0.26.0] 2022-10-19
+
+### Added
+* Support MySQL table option `{INDEX | KEY}` in CREATE TABLE definiton (#665) - Thanks @AugustoFKL
+* Support `CREATE [ { TEMPORARY | TEMP } ] SEQUENCE [ IF NOT EXISTS ] <sequence_name>` (#678) - Thanks @sam-mmm
+* Support `DROP SEQUENCE` statement (#673) - Thanks @sam-mmm
+* Support for ANSI types  `CHARACTER LARGE OBJECT[(p)]` and `CHAR LARGE OBJECT[(p)]` (#671)  - Thanks @AugustoFKL
+* Support `[CACHE|UNCACHE] TABLE` (#670) - Thanks @francis-du
+* Support `CEIL(expr TO DateTimeField)` and `FLOOR(expr TO DateTimeField)` - Thanks @sarahyurick
+* Support all ansii character string types, (#648) - Thanks @AugustoFKL
+
+### Changed
+* Support expressions inside window frames (#655) - Thanks @mustafasrepo and @ozankabak
+* Support unit on char length units for small character strings (#663) - Thanks @AugustoFKL
+* Replace booleans on `SET ROLE` with a single enum. (#664) - Thanks @AugustoFKL
+* Replace `Option`s with enum for `DECIMAL` precision (#654) - Thanks @AugustoFKL
+
 ## [0.25.0] 2022-10-03
 
 ### Added

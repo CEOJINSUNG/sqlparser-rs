@@ -16,12 +16,17 @@ use core::fmt;
 
 #[cfg(feature = "bigdecimal")]
 use bigdecimal::BigDecimal;
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "visitor")]
+use sqlparser_derive::Visit;
+
 /// Primitive SQL values such as number and string
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
 pub enum Value {
     /// Numeric literal
     #[cfg(not(feature = "bigdecimal"))]
@@ -30,8 +35,11 @@ pub enum Value {
     Number(BigDecimal, bool),
     /// 'string value'
     SingleQuotedString(String),
+    // $<tag_name>$string value$<tag_name>$ (postgres syntax)
+    DollarQuotedString(DollarQuotedString),
     /// e'string value' (postgres extension)
-    /// <https://www.postgresql.org/docs/8.3/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS
+    /// See [Postgres docs](https://www.postgresql.org/docs/8.3/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS)
+    /// for more details.
     EscapedStringLiteral(String),
     /// N'string value'
     NationalStringLiteral(String),
@@ -45,6 +53,8 @@ pub enum Value {
     Null,
     /// `?` or `$` Prepared statement arg placeholder
     Placeholder(String),
+    /// Add support of snowflake field:key - key should be a value
+    UnQuotedString(String),
 }
 
 impl fmt::Display for Value {
@@ -53,23 +63,48 @@ impl fmt::Display for Value {
             Value::Number(v, l) => write!(f, "{}{long}", v, long = if *l { "L" } else { "" }),
             Value::DoubleQuotedString(v) => write!(f, "\"{}\"", v),
             Value::SingleQuotedString(v) => write!(f, "'{}'", escape_single_quote_string(v)),
+            Value::DollarQuotedString(v) => write!(f, "{}", v),
             Value::EscapedStringLiteral(v) => write!(f, "E'{}'", escape_escaped_string(v)),
             Value::NationalStringLiteral(v) => write!(f, "N'{}'", v),
             Value::HexStringLiteral(v) => write!(f, "X'{}'", v),
             Value::Boolean(v) => write!(f, "{}", v),
             Value::Null => write!(f, "NULL"),
             Value::Placeholder(v) => write!(f, "{}", v),
+            Value::UnQuotedString(v) => write!(f, "{}", v),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
+pub struct DollarQuotedString {
+    pub value: String,
+    pub tag: Option<String>,
+}
+
+impl fmt::Display for DollarQuotedString {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.tag {
+            Some(tag) => {
+                write!(f, "${}${}${}$", tag, self.value, tag)
+            }
+            None => {
+                write!(f, "$${}$$", self.value)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
 pub enum DateTimeField {
     Year,
     Month,
     Week,
     Day,
+    Date,
     Hour,
     Minute,
     Second,
@@ -87,6 +122,8 @@ pub enum DateTimeField {
     Millennium,
     Millisecond,
     Milliseconds,
+    Nanosecond,
+    Nanoseconds,
     Quarter,
     Timezone,
     TimezoneHour,
@@ -101,6 +138,7 @@ impl fmt::Display for DateTimeField {
             DateTimeField::Month => "MONTH",
             DateTimeField::Week => "WEEK",
             DateTimeField::Day => "DAY",
+            DateTimeField::Date => "DATE",
             DateTimeField::Hour => "HOUR",
             DateTimeField::Minute => "MINUTE",
             DateTimeField::Second => "SECOND",
@@ -118,6 +156,8 @@ impl fmt::Display for DateTimeField {
             DateTimeField::Millennium => "MILLENNIUM",
             DateTimeField::Millisecond => "MILLISECOND",
             DateTimeField::Milliseconds => "MILLISECONDS",
+            DateTimeField::Nanosecond => "NANOSECOND",
+            DateTimeField::Nanoseconds => "NANOSECONDS",
             DateTimeField::Quarter => "QUARTER",
             DateTimeField::Timezone => "TIMEZONE",
             DateTimeField::TimezoneHour => "TIMEZONE_HOUR",
@@ -187,8 +227,9 @@ pub fn escape_escaped_string(s: &str) -> EscapeEscapedStringLiteral<'_> {
     EscapeEscapedStringLiteral(s)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
 pub enum TrimWhereField {
     Both,
     Leading,

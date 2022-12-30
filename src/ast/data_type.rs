@@ -11,19 +11,23 @@
 // limitations under the License.
 
 #[cfg(not(feature = "std"))]
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, format, string::String, vec::Vec};
 use core::fmt;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "visitor")]
+use sqlparser_derive::Visit;
 
 use crate::ast::ObjectName;
 
 use super::value::escape_single_quote_string;
 
 /// SQL data types
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
 pub enum DataType {
     /// Fixed-length character type e.g. CHARACTER(10)
     Character(Option<CharacterLength>),
@@ -39,7 +43,15 @@ pub enum DataType {
     Nvarchar(Option<u64>),
     /// Uuid type
     Uuid,
-    /// Large character object with optional length e.g. CLOB, CLOB(1000), [standard], [Oracle]
+    /// Large character object with optional length e.g. CHARACTER LARGE OBJECT, CHARACTER LARGE OBJECT(1000), [standard]
+    ///
+    /// [standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#character-large-object-type
+    CharacterLargeObject(Option<u64>),
+    /// Large character object with optional length e.g. CHAR LARGE OBJECT, CHAR LARGE OBJECT(1000), [standard]
+    ///
+    /// [standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#character-large-object-type
+    CharLargeObject(Option<u64>),
+    /// Large character object with optional length e.g. CLOB, CLOB(1000), [standard]
     ///
     /// [standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#character-large-object-type
     /// [Oracle]: https://docs.oracle.com/javadb/10.10.1.2/ref/rrefclob.html
@@ -59,8 +71,18 @@ pub enum DataType {
     /// [standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#binary-large-object-string-type
     /// [Oracle]: https://docs.oracle.com/javadb/10.8.3.0/ref/rrefblob.html
     Blob(Option<u64>),
-    /// Decimal type with optional precision and scale e.g. DECIMAL(10,2)
+    /// Numeric type with optional precision and scale e.g. NUMERIC(10,2), [standard][1]
+    ///
+    /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#exact-numeric-type
+    Numeric(ExactNumberInfo),
+    /// Decimal type with optional precision and scale e.g. DECIMAL(10,2), [standard][1]
+    ///
+    /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#exact-numeric-type
     Decimal(ExactNumberInfo),
+    /// Dec type with optional precision and scale e.g. DEC(10,2), [standard][1]
+    ///
+    /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#exact-numeric-type
+    Dec(ExactNumberInfo),
     /// Floating point with optional precision e.g. FLOAT(8)
     Float(Option<u64>),
     /// Tiny integer with optional display width e.g. TINYINT or TINYINT(3)
@@ -104,12 +126,18 @@ pub enum DataType {
     Boolean,
     /// Date
     Date,
-    /// Time
-    Time(TimezoneInfo),
-    /// Datetime
-    Datetime,
-    /// Timestamp
-    Timestamp(TimezoneInfo),
+    /// Time with optional time precision and time zone information e.g. [standard][1].
+    ///
+    /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
+    Time(Option<u64>, TimezoneInfo),
+    /// Datetime with optional time precision e.g. [MySQL][1].
+    ///
+    /// [1]: https://dev.mysql.com/doc/refman/8.0/en/datetime.html
+    Datetime(Option<u64>),
+    /// Timestamp with optional time precision and time zone information e.g. [standard][1].
+    ///
+    /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#datetime-type
+    Timestamp(Option<u64>, TimezoneInfo),
     /// Interval
     Interval,
     /// Regclass used in postgresql serial
@@ -121,9 +149,9 @@ pub enum DataType {
     /// Bytea
     Bytea,
     /// Custom type such as enums
-    Custom(ObjectName),
+    Custom(ObjectName, Vec<String>),
     /// Arrays
-    Array(Box<DataType>),
+    Array(Option<Box<DataType>>),
     /// Enums
     Enum(Vec<String>),
     /// Set
@@ -145,14 +173,26 @@ impl fmt::Display for DataType {
                 format_type_with_optional_length(f, "NVARCHAR", size, false)
             }
             DataType::Uuid => write!(f, "UUID"),
+            DataType::CharacterLargeObject(size) => {
+                format_type_with_optional_length(f, "CHARACTER LARGE OBJECT", size, false)
+            }
+            DataType::CharLargeObject(size) => {
+                format_type_with_optional_length(f, "CHAR LARGE OBJECT", size, false)
+            }
             DataType::Clob(size) => format_type_with_optional_length(f, "CLOB", size, false),
             DataType::Binary(size) => format_type_with_optional_length(f, "BINARY", size, false),
             DataType::Varbinary(size) => {
                 format_type_with_optional_length(f, "VARBINARY", size, false)
             }
             DataType::Blob(size) => format_type_with_optional_length(f, "BLOB", size, false),
-            DataType::Decimal(info) => {
+            DataType::Numeric(info) => {
                 write!(f, "NUMERIC{}", info)
+            }
+            DataType::Decimal(info) => {
+                write!(f, "DECIMAL{}", info)
+            }
+            DataType::Dec(info) => {
+                write!(f, "DEC{}", info)
             }
             DataType::Float(size) => format_type_with_optional_length(f, "FLOAT", size, false),
             DataType::TinyInt(zerofill) => {
@@ -194,16 +234,34 @@ impl fmt::Display for DataType {
             DataType::DoublePrecision => write!(f, "DOUBLE PRECISION"),
             DataType::Boolean => write!(f, "BOOLEAN"),
             DataType::Date => write!(f, "DATE"),
-            DataType::Time(timezone_info) => write!(f, "TIME{}", timezone_info),
-            DataType::Datetime => write!(f, "DATETIME"),
-            DataType::Timestamp(timezone_info) => write!(f, "TIMESTAMP{}", timezone_info),
+            DataType::Time(precision, timezone_info) => {
+                format_datetime_precision_and_tz(f, "TIME", precision, timezone_info)
+            }
+            DataType::Datetime(precision) => {
+                format_type_with_optional_length(f, "DATETIME", precision, false)
+            }
+            DataType::Timestamp(precision, timezone_info) => {
+                format_datetime_precision_and_tz(f, "TIMESTAMP", precision, timezone_info)
+            }
             DataType::Interval => write!(f, "INTERVAL"),
             DataType::Regclass => write!(f, "REGCLASS"),
             DataType::Text => write!(f, "TEXT"),
             DataType::String => write!(f, "STRING"),
             DataType::Bytea => write!(f, "BYTEA"),
-            DataType::Array(ty) => write!(f, "{}[]", ty),
-            DataType::Custom(ty) => write!(f, "{}", ty),
+            DataType::Array(ty) => {
+                if let Some(t) = &ty {
+                    write!(f, "{}[]", t)
+                } else {
+                    write!(f, "ARRAY")
+                }
+            }
+            DataType::Custom(ty, modifiers) => {
+                if modifiers.is_empty() {
+                    write!(f, "{}", ty)
+                } else {
+                    write!(f, "{}({})", ty, modifiers.join(", "))
+                }
+            }
             DataType::Enum(vals) => {
                 write!(f, "ENUM(")?;
                 for (i, v) in vals.iter().enumerate() {
@@ -256,12 +314,34 @@ fn format_character_string_type(
     Ok(())
 }
 
+fn format_datetime_precision_and_tz(
+    f: &mut fmt::Formatter,
+    sql_type: &'static str,
+    len: &Option<u64>,
+    time_zone: &TimezoneInfo,
+) -> fmt::Result {
+    write!(f, "{}", sql_type)?;
+    let len_fmt = len.as_ref().map(|l| format!("({l})")).unwrap_or_default();
+
+    match time_zone {
+        TimezoneInfo::Tz => {
+            write!(f, "{time_zone}{len_fmt}")?;
+        }
+        _ => {
+            write!(f, "{len_fmt}{time_zone}")?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Timestamp and Time data types information about TimeZone formatting.
 ///
 /// This is more related to a display information than real differences between each variant. To
 /// guarantee compatibility with the input query we must maintain its exact information.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
 pub enum TimezoneInfo {
     /// No information about time zone. E.g., TIMESTAMP
     None,
@@ -307,8 +387,9 @@ impl fmt::Display for TimezoneInfo {
 /// following the 2016 [standard].
 ///
 /// [standard]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#exact-numeric-type
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
 pub enum ExactNumberInfo {
     /// No additional information e.g. `DECIMAL`
     None,
@@ -337,8 +418,9 @@ impl fmt::Display for ExactNumberInfo {
 /// Information about [character length][1], including length and possibly unit.
 ///
 /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#character-length
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
 pub struct CharacterLength {
     /// Default (if VARYING) or maximum (if not VARYING) length
     pub length: u64,
@@ -359,8 +441,9 @@ impl fmt::Display for CharacterLength {
 /// Possible units for characters, initially based on 2016 ANSI [standard][1].
 ///
 /// [1]: https://jakewheat.github.io/sql-overview/sql-2016-foundation-grammar.html#char-length-units
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit))]
 pub enum CharLengthUnits {
     /// CHARACTERS unit
     Characters,
